@@ -16,6 +16,8 @@ use HTML::TreeBuilder 5 -weak;
 binmode(STDOUT, ":utf8");
 binmode(STDERR, ":utf8");
 
+my $download_dir = 'torrents';
+
 check_env('LOSTFILM_COOKIE');
 
 work();
@@ -58,8 +60,10 @@ sub work {
         foreach my $item_video (@arr_video) {
             my $a_video = $item_video->look_down('_tag' => 'a');
             my $uri_video = $a_video->attr('href');
-            print "<$uri_video>\n";
+            #print "<$uri_video>\n";
+            fetch_file($ua, $uri_video);
         }
+        print "\n";
     }
 }
 
@@ -75,6 +79,28 @@ sub fetch_page {
 
     my $tree = HTML::TreeBuilder->new_from_content($content) or die "<$uri>\nerror parsing page [$!]\n";
     return $tree;
+}
+
+
+sub fetch_file {
+    my ($ua, $uri) = @_;
+
+    my $req = HTTP::Request->new(GET => $uri);
+    my $rsp = $ua->request($req);
+    $rsp->is_success or die "<$uri>\nerror fetching file [" . $rsp->status_line. "]\n";
+    my $content = $rsp->content or die "<$uri>\nerror fetching file\n";
+    my $condisp = $rsp->header('Content-Disposition') or die "<$uri>\nno Content-Disposition header\n";
+    $condisp =~ /^attachment;filename="([^"]*)"$/ or die "<$uri>\nunexpected Content-Disposition header [$condisp]\n";
+    my $filename = $1;
+    print "$filename\n";
+
+    mkdir $download_dir if (!-e $download_dir);
+    $filename = "$download_dir/$filename";
+    die "file already exists\n" if (-e $filename);
+    open my $fh, '>', $filename or die "error creating file [$!]\n";
+    binmode $fh or die "error writing to file [$!]\n";
+    print $fh $content or die "error writing to file [$!]\n";
+    close $fh or die "error writing to file [$!]\n";
 }
 
 
