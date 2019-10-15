@@ -17,6 +17,7 @@ binmode(STDOUT, ":utf8");
 binmode(STDERR, ":utf8");
 
 my $download_dir = 'torrents';
+my $database_file = 'database.dat';
 
 check_env('LOSTFILM_COOKIE');
 
@@ -27,7 +28,9 @@ sub work {
     my $uri_news = 'http://www.lostfilm.tv/new/';
     my $uri_search = 'http://www.lostfilm.tv/v_search.php?a=';
 
+    my @id_episode_list = ();
     my $ua = prepare_ua();
+
     my $tree_news = fetch_page($ua, $uri_news, undef);
     my @arr_episode = $tree_news->look_down('_tag' => 'div', 'class' => 'row') or die "<$uri_news>\ncontent error";
     foreach my $item_episode (@arr_episode) {
@@ -40,10 +43,16 @@ sub work {
         my $id_episode = $download_button->attr('onclick') or die "<$uri_episode>\ncontent error";
         $id_episode =~ s/^PlayEpisode\('(.*)'\)$/$1/;
         looks_like_number($id_episode) or die "<$uri_episode>\ncontent error";
+        push @id_episode_list, $id_episode;
+    }
+
+    @id_episode_list = absent_in_database(@id_episode_list);
+
+    foreach my $id_episode (@id_episode_list) {
         my $tree_search = fetch_page($ua, $uri_search . $id_episode, $ENV{'LOSTFILM_COOKIE'});
 
-        my $a_retre = $tree_search->look_down('_tag' => 'a') or die "<$uri_episode>\ncontent error";
-        my $uri_retre = $a_retre->attr('href') or die "<$uri_episode>\ncontent error";
+        my $a_retre = $tree_search->look_down('_tag' => 'a') or die "<$uri_search$id_episode>\ncontent error";
+        my $uri_retre = $a_retre->attr('href') or die "<$uri_search$id_episode>\ncontent error";
         my $tree_retre = fetch_page($ua, $uri_retre, undef);
 
         my $episode_title1 = $tree_retre->look_down('_tag' => 'div', 'class' => 'inner-box--title') or die "<$uri_retre>\ncontent error";
@@ -63,6 +72,8 @@ sub work {
             #print "<$uri_video>\n";
             fetch_file($ua, $uri_video);
         }
+
+        put_to_database($id_episode);
         print "\n";
     }
 }
@@ -114,6 +125,29 @@ sub prepare_ua {
         $ua->agent($ENV{'HTTP_USERAGENT'});
     }
     return $ua;
+}
+
+
+sub absent_in_database {
+    my (@ids) = @_;
+    return @ids if (!-e $database_file);
+
+    open my $fh, '<', $database_file or die "error reading database file [$!]\n";
+    while (<$fh>) {
+        my $line = trim($_);
+        @ids = grep { $line ne $_ } @ids;
+    }
+    close $fh or die "error reading database file [$!]\n";
+    return @ids;
+}
+
+
+sub put_to_database {
+    my ($id) = @_;
+
+    open my $fh, '>>', $database_file or die "error writing database file [$!]\n";
+    print $fh "$id\n" or die "error writing database file [$!]\n";
+    close $fh or die "error writing database file [$!]\n";
 }
 
 
